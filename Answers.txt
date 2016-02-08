@@ -1,0 +1,176 @@
+######################################################
+# INFSCI 2725: Data Analytics                        #
+# Assignment 1: Storage and processing of data       #
+# Answered by Mohammed Alharbi & Yixuan Edison Wang  #
+######################################################
+
+==========
+Questions:
+==========
+
+1) What genre is the movie CopyCat in?
+QUERY:
+	db.movies.find({ Title: /Copycat/ }, { _id:0, Title: 1, Genres: 1})
+
+RESULT:
+	{ "Title" : "Copycat (1995)", "Genres" : [ "Crime", "Drama", "Horror", "Mystery", "Thriller" ] }
+————————————————————————————————————————————————————————————————————————————————————
+2) what genre has the most movies?
+QUERY:
+	db.movies.aggregate([
+		{$unwind: "$Genres"}, 
+		{$group: {_id: "$Genres", count: {$sum: 1}}}, 
+		{$sort: {count: -1}}, 
+		{$limit: 1}, 
+		{$project: {_id: 0, Genre: "$_id"}}
+	])
+
+RESULT:
+	{ "Genre" : "Drama" }
+————————————————————————————————————————————————————————————————————————————————————
+3) what tags did user 146 use to describe the movie "2001: A Space Odyssey”
+	A. The following query outputs three documents:
+QUERY #1:
+	db.movies.aggregate([
+		{$match: {Title: /2001: A Space Odyssey/}}, 
+		{$project: {_id:0, MovieID: 1, Title: 1, "Tags.UserID": 1, "Tags.Tag": 1}}, 
+		{$unwind: "$Tags"}, 
+		{$match: {"Tags.UserID": 146}}
+	])
+
+RESULT #1:
+	{ "MovieID" : 924, "Title" : "2001: A Space Odyssey (1968)", "Tags" : { "UserID" : 146, "Tag" : "Arthur C. Clarke" } }
+	{ "MovieID" : 924, "Title" : "2001: A Space Odyssey (1968)", "Tags" : { "UserID" : 146, "Tag" : "artificial intelligence" } }
+	{ "MovieID" : 924, "Title" : "2001: A Space Odyssey (1968)", "Tags" : { "UserID" : 146, "Tag" : "based on a book" } }
+
+	B. The following query group the results in one document:
+QUERY #1:
+	db.movies.aggregate([
+		{$match: {Title: /2001: A Space Odyssey/}}, 
+		{$project: {_id:0, MovieID: 1, Title: 1, "Tags.UserID": 1, "Tags.Tag": 1}}, 
+		{$unwind: "$Tags"}, 
+		{$group: {_id: {MovieID: "$MovieID", Title:"$Title", UserID: "$Tags.UserID"}, MovieTags: {$addToSet: "$Tags.Tag"}}}, 
+		{$project: {_id: 0, MovieID: "$_id.MovieID", Title: "$_id.Title", UserID: "$_id.UserID", Tags: "$MovieTags"}},
+		{$match: {UserID: 146}}
+	])
+
+RESULT #2:
+	{ "MovieID" : 924, "Title" : "2001: A Space Odyssey (1968)", "UserID" : 146, "Tags" : [ "based on a book", "artificial intelligence", "Arthur C. Clarke" ] }
+
+————————————————————————————————————————————————————————————————————————————————————
+4) What are the top 5 movies with the highest avg rating?  
+QUERY #1 (~14.5s):
+	db.movies.aggregate([
+		{$project: {_id: 0, MovieID: 1, Title: 1, "Ratings.Rating": 1}},
+		{$unwind: "$Ratings"},
+		{$group: {_id: {MovieID: "$MovieID", Title: "$Title"}, MovieRatingAvg: {$avg: "$Ratings.Rating"}}},
+		{$project: {_id: 0, MovieID: "$_id.MovieID", Title: "$_id.Title", RatingAvg: "$MovieRatingAvg"}},
+		{$sort: {RatingAvg: -1, MovieID: 1}}, 
+		{$limit: 5}
+	], {allowDiskUse: true})
+
+QUERY #2 (~5.3s):
+	db.movies.aggregate([
+		{$project: {_id: 0, MovieID: 1, Title: 1, RatingAvg: {$avg: "$Ratings.Rating"}}}, 
+		{$sort: {RatingAvg: -1, MovieID: 1}}, 
+		{$limit: 5}
+	], {allowDiskUse: true})
+
+RESULT #1 & #2:
+	{ "MovieID" : 33264, "Title" : "Satan's Tango (Sátántangó) (1994)", "RatingAvg" : 5 }
+	{ "MovieID" : 42783, "Title" : "Shadows of Forgotten Ancestors (1964)", "RatingAvg" : 5 }
+	{ "MovieID" : 51209, "Title" : "Fighting Elegy (Kenka erejii) (1966)", "RatingAvg" : 5 }
+	{ "MovieID" : 53355, "Title" : "Sun Alley (Sonnenallee) (1999)", "RatingAvg" : 5 }
+	{ "MovieID" : 64275, "Title" : "Blue Light, The (Das Blaue Licht) (1932)", "RatingAvg" : 5 }
+————————————————————————————————————————————————————————————————————————————————————
+5) What is the highest avg rating possible?
+QUERY:
+	db.movies.aggregate([
+		{$project: {_id: 0, HighestAvgRating: {$avg: "$Ratings.Rating"}}}, 
+		{$sort: {HighestAvgRating: -1}}, 
+		{$limit: 1}
+	], {allowDiskUse: true})
+
+RESULT:
+	{ "HighestAvgRating" : 5 }
+————————————————————————————————————————————————————————————————————————————————————
+6) Write 3 different queries of your choice to demonstrate that your data storage is working. 
+
+	A. How many ratings are submitted by the users each year?
+	QUERY:
+		 db.movies.aggregate([
+			{$project: {_id: 0, Ratings: 1}},
+			{$unwind: "$Ratings"}, 
+			{$group: {_id:{$year: "$Ratings.Timestamp"}, count: {$sum: 1}}},
+			{$project: {_id:0, Year: "$_id", RatingsCount: "$count"}},
+			{$sort: {Year: 1}}
+		], {allowDiskUse: true})
+
+	RESULT:
+		{ "Year" : 1995, "RatingsCount" : 3 }
+		{ "Year" : 1996, "RatingsCount" : 1047618 }
+		{ "Year" : 1997, "RatingsCount" : 459947 }
+		{ "Year" : 1998, "RatingsCount" : 202092 }
+		{ "Year" : 1999, "RatingsCount" : 788793 }
+		{ "Year" : 2000, "RatingsCount" : 1271623 }
+		{ "Year" : 2001, "RatingsCount" : 759141 }
+		{ "Year" : 2002, "RatingsCount" : 583409 }
+		{ "Year" : 2003, "RatingsCount" : 688694 }
+		{ "Year" : 2004, "RatingsCount" : 768168 }
+		{ "Year" : 2005, "RatingsCount" : 1177283 }
+		{ "Year" : 2006, "RatingsCount" : 765733 }
+		{ "Year" : 2007, "RatingsCount" : 699325 }
+		{ "Year" : 2008, "RatingsCount" : 773617 }
+		{ "Year" : 2009, "RatingsCount" : 14608 }
+————————————————————————————————————————————————————————————————————————————————————
+	B. Find all years that have a movie that received a rating of 4.5 and more, and sort them in increasing order.
+	QUERY:
+		 db.movies.aggregate([
+			{$project: {_id: 0, Ratings: 1}},
+			{$unwind: "$Ratings"}, 
+			{$match: {"Ratings.Rating": {$gte: 4.5}}}, 
+			{$group: {_id:{$year: "$Ratings.Timestamp"}, count: {$sum: 1}}},
+			{$project: {_id: 0, Year:"$_id", MoviesCount: "$count"}},
+			{$sort: {Count: 1}}
+		], {allowDiskUse: true})
+
+	RESULT:
+		{ "Year" : 1995, "MoviesCount" : 1 }
+		{ "Year" : 2009, "MoviesCount" : 2960 }
+		{ "Year" : 2001, "MoviesCount" : 158082 }
+		{ "Year" : 2000, "MoviesCount" : 288254 }
+		{ "Year" : 1999, "MoviesCount" : 189649 }
+		{ "Year" : 2003, "MoviesCount" : 144558 }
+		{ "Year" : 1998, "MoviesCount" : 42154 }
+		{ "Year" : 2002, "MoviesCount" : 110409 }
+		{ "Year" : 2005, "MoviesCount" : 241601 }
+		{ "Year" : 2004, "MoviesCount" : 155240 }
+		{ "Year" : 2008, "MoviesCount" : 180923 }
+		{ "Year" : 1997, "MoviesCount" : 96608 }
+		{ "Year" : 2006, "MoviesCount" : 162850 }
+		{ "Year" : 2007, "MoviesCount" : 153481 }
+		{ "Year" : 1996, "MoviesCount" : 203064 }
+————————————————————————————————————————————————————————————————————————————————————
+	C. Find the top 10 users with the number of movies that they rated, each document should include the effective year for each user.
+	QUERY:
+		db.movies.aggregate([
+			{$project: {_id: 0, MovieID: 1, Ratings: 1}},
+			{$unwind: "$Ratings"},
+			{$group: {_id: "$Ratings.UserID", total: {$sum: 1}, effective: {$min: {$year: "$Ratings.Timestamp"}}}},
+			{$project: {_id: 0, UserID: "$_id", RatedMoviesCount: "$total", effectiveYear: "$effective"}},
+			{$sort: {RatedMoviesCount: -1}},
+			{$limit: 10}
+		])
+
+	RESULT:
+		{ "UserID" : 59269, "RatedMoviesCount" : 7359, "effectiveYear" : 2001 }
+		{ "UserID" : 67385, "RatedMoviesCount" : 7047, "effectiveYear" : 2006 }
+		{ "UserID" : 14463, "RatedMoviesCount" : 5169, "effectiveYear" : 2002 }
+		{ "UserID" : 68259, "RatedMoviesCount" : 4483, "effectiveYear" : 2001 }
+		{ "UserID" : 27468, "RatedMoviesCount" : 4449, "effectiveYear" : 2000 }
+		{ "UserID" : 3817, "RatedMoviesCount" : 4165, "effectiveYear" : 2006 }
+		{ "UserID" : 19635, "RatedMoviesCount" : 4165, "effectiveYear" : 1997 }
+		{ "UserID" : 63134, "RatedMoviesCount" : 3755, "effectiveYear" : 2005 }
+		{ "UserID" : 58357, "RatedMoviesCount" : 3697, "effectiveYear" : 1999 }
+		{ "UserID" : 27584, "RatedMoviesCount" : 3479, "effectiveYear" : 1998 }
+————————————————————————————————————————————————————————————————————————————————————
